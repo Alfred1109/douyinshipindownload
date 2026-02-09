@@ -1,0 +1,20 @@
+# ─── Web 框架 ───
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# ─── 视频下载 ───
+yt-dlp>=2024.1.0
+rookiepy>=0.5.6
+
+# ─── 语音识别 (本地模式) ───
+faster-whisper>=1.0.0
+torch>=2.0.0
+
+# ─── LLM 大模型 ───
+openai>=1.6.0
+
+# ─── 工具库 ───
+httpx>=0.25.0
+python-multipart>=0.0.6
