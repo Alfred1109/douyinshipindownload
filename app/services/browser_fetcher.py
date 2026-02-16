@@ -289,7 +289,7 @@ class BrowserFetcher:
             response = await page.request.get(url, headers={
                 'Referer': 'https://www.douyin.com/',
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            })
+            }, timeout=120000)  # 增加到 120 秒
             
             if response.status != 200:
                 logger.error(f"❌ 下载失败: HTTP {response.status}")
