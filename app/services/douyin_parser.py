@@ -89,7 +89,7 @@ class DouyinParser:
         完全模拟真实浏览器行为，绕过所有反爬限制
         """
         output_dir = output_dir or settings.temp_dir
-        output_dir.mkdir(parents=True, exist_ok=True
+        output_dir.mkdir(parents=True, exist_ok=True)
 
         logger.info(f"🌐 使用浏览器自动化下载: {url}")
         
