@@ -1,9 +1,9 @@
 @echo off
 setlocal
 chcp 65001 >nul 2>&1
-title Stop Douyin Video Transcript Tool
+title Restart Douyin Video Transcript Tool
 
-:: Auto-elevate since service may be running as admin
+:: Single UAC prompt for full restart flow
 net session >nul 2>&1
 if %errorlevel% neq 0 (
     echo Requesting administrator privileges...
@@ -13,21 +13,15 @@ if %errorlevel% neq 0 (
 cd /d "%~dp0"
 
 echo ========================================
-echo   Stop Douyin Video Transcript Tool
+echo   Restart Douyin Video Transcript Tool
 echo ========================================
 echo.
 
-:: Stop uvicorn python process by window title / commandline text
-for /f "tokens=2" %%a in ('tasklist /fi "imagename eq python.exe" /v 2^>nul ^| findstr /i "uvicorn"') do (
-    echo Stopping python process PID: %%a
-    taskkill /pid %%a /f >nul 2>&1
-)
-
-:: Fallback: stop any process listening on 8000
+:: Stop old service
 for /f "tokens=5" %%a in ('netstat -aon 2^>nul ^| findstr ":8000" ^| findstr "LISTENING"') do (
     echo Stopping process on port 8000, PID: %%a
     taskkill /pid %%a /f >nul 2>&1
 )
 
-echo.
-echo Service stop routine completed.
+:: Start new service (reuses full checks in start.bat)
+call start.bat

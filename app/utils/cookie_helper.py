@@ -13,6 +13,7 @@ from app.config import BASE_DIR, settings
 logger = logging.getLogger(__name__)
 
 COOKIE_FILE = BASE_DIR / "temp" / "cookies.txt"
+COOKIE_TTL_SECONDS = 60
 
 
 def _get_browser_funcs() -> dict:
@@ -32,15 +33,68 @@ def _get_browser_funcs() -> dict:
 def _try_extract(browser_name: str, func) -> list:
     """尝试从指定浏览器提取 cookies"""
     try:
-        cookies = func(domains=[".douyin.com"])
+        # 说明：
+        # rookiepy 的 domains 过滤在部分环境下会漏掉抖音关键字段（如 s_v_web_id）。
+        # 这里改为先提取全量 cookies，再做域名过滤。由于只写入 douyin/iesdouyin 的少量 cookies，
+        # 配合 TTL 缓存，整体开销可控。
+        raw_cookies = func()
+        cookies = []
+        for c in raw_cookies or []:
+            domain = str(c.get("domain", "")).lower()
+            if "douyin.com" in domain or "iesdouyin.com" in domain:
+                cookies.append(c)
+
         if cookies:
-            logger.info(f"✅ 从 {browser_name} 成功提取 {len(cookies)} 个 cookies")
+            logger.info(f"✅ 从 {browser_name} 成功提取 {len(cookies)} 个抖音 cookies")
             return cookies
-        else:
-            logger.debug(f"{browser_name} 中无抖音 cookies")
+
+        logger.debug(f"{browser_name} 中无抖音 cookies")
     except Exception as e:
         logger.debug(f"{browser_name} 提取失败: {e}")
     return []
+
+
+def _score_cookies(cookies: list) -> int:
+    """
+    给 cookies 集合打分，用于从多个浏览器候选中选择“最可能可用”的一份。
+
+    经验规则：
+    - 抖音/头条系常见关键字段存在时更可能绕过风控
+    - cookies 越多通常越“新”/越完整
+    """
+    names = set()
+    for c in cookies or []:
+        name = c.get("name")
+        if isinstance(name, str) and name:
+            names.add(name)
+
+    score = len(cookies or [])
+
+    # 加权：更偏向能通过风控的关键字段（不一定需要登录）
+    key_weights = {
+        # 登录态/强身份字段（若存在，强烈加分）
+        "sessionid": 120,
+        "sessionid_ss": 120,
+        "sid_tt": 90,
+        "uid_tt": 90,
+        "passport_auth_status": 60,
+        # 常见风控/反爬字段（通常需要“新”）
+        "msToken": 60,
+        "ms_token": 60,
+        "s_v_web_id": 40,
+        "__ac_signature": 30,
+        "__ac_nonce": 20,
+        "ttwid": 20,
+        "odin_tt": 20,
+        "passport_csrf_token": 15,
+        "passport_csrf_token_default": 10,
+    }
+
+    for k, w in key_weights.items():
+        if k in names:
+            score += w
+
+    return score
 
 
 def _save_cookies(cookies: list) -> str:
@@ -78,6 +132,12 @@ def _save_cookies(cookies: list) -> str:
 
     jar.save(ignore_discard=True, ignore_expires=True)
     logger.info(f"cookies 已保存到 {COOKIE_FILE}")
+
+    # 关键字段检查（只打日志，不输出具体值）
+    names = {c.get("name") for c in cookies or [] if isinstance(c, dict)}
+    if "s_v_web_id" not in names:
+        logger.warning("cookies 中未包含 s_v_web_id，yt-dlp 可能仍会提示 Fresh cookies")
+
     return str(COOKIE_FILE)
 
 
@@ -85,8 +145,7 @@ def extract_cookies_to_file() -> str:
     """
     从浏览器提取抖音 cookies 并保存为文件
 
-    策略: 优先使用配置的浏览器，失败后自动降级尝试其他浏览器
-    降级顺序: 配置的浏览器 → edge → chrome → firefox → 其他
+    策略: 优先使用配置的浏览器，但会综合比较多个候选，选择更“完整”的 cookies
 
     Returns:
         cookies.txt 文件路径，提取失败返回空字符串
@@ -94,6 +153,15 @@ def extract_cookies_to_file() -> str:
     configured = settings.ytdlp_cookies_from_browser
     if not configured:
         return ""
+
+    # 小 TTL 缓存：同一请求内 extract_info + download 两次调用时不重复解密
+    try:
+        if COOKIE_FILE.exists():
+            age = time.time() - COOKIE_FILE.stat().st_mtime
+            if age >= 0 and age < COOKIE_TTL_SECONDS:
+                return str(COOKIE_FILE)
+    except Exception:
+        pass
 
     try:
         browser_funcs = _get_browser_funcs()
@@ -108,7 +176,9 @@ def extract_cookies_to_file() -> str:
         if b not in try_order:
             try_order.append(b)
 
-    # 依次尝试每个浏览器
+    best = None  # (score, browser_name, cookies)
+
+    # 依次尝试每个浏览器，选“最优”候选
     for browser_name in try_order:
         func = browser_funcs.get(browser_name)
         if not func:
@@ -116,9 +186,15 @@ def extract_cookies_to_file() -> str:
 
         cookies = _try_extract(browser_name, func)
         if cookies:
-            if browser_name != configured.lower():
-                logger.info(f"💡 {configured} 提取失败，已自动降级使用 {browser_name} 的 cookies")
-            return _save_cookies(cookies)
+            score = _score_cookies(cookies)
+            if best is None or score > best[0]:
+                best = (score, browser_name, cookies)
+
+    if best:
+        _, selected_browser, cookies = best
+        if selected_browser != configured.lower():
+            logger.info(f"💡 已自动选择 {selected_browser} 的 cookies（配置为 {configured}）")
+        return _save_cookies(cookies)
 
     logger.error(
         "❌ 所有浏览器均无法提取抖音 cookies！\n"

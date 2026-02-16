@@ -1,67 +1,75 @@
 @echo off
+setlocal
 chcp 65001 >nul 2>&1
-title 抖音短视频文案提取工具
+title Douyin Video Transcript Tool
 
-:: ─── 自动请求管理员权限（Chrome v130+ cookies 解密需要） ───
+:: Auto-elevate to admin (needed for browser cookie decryption)
 net session >nul 2>&1
 if %errorlevel% neq 0 (
-    echo 正在请求管理员权限...
-    powershell -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+    echo Requesting administrator privileges...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
     exit /b
 )
 cd /d "%~dp0"
 
 echo ========================================
-echo   抖音短视频文案提取工具
+echo   Douyin Video Transcript Tool
 echo ========================================
 echo.
 
-:: 检查 Python
+:: Check Python
 where python >nul 2>&1
 if %errorlevel% neq 0 (
-    echo [错误] 未检测到 Python，请先安装 Python 3.10+
+    echo [ERROR] Python is not detected. Please install Python 3.10+ first.
     pause
     exit /b 1
 )
 
-:: 检查 FFmpeg
+:: Check FFmpeg
 where ffmpeg >nul 2>&1
 if %errorlevel% neq 0 (
-    echo [警告] 未检测到 FFmpeg，音频提取功能将不可用
-    echo         请从 https://ffmpeg.org/download.html 下载并添加到 PATH
+    echo [WARN] FFmpeg is not detected. Audio extraction may fail.
+    echo        Install from https://ffmpeg.org/download.html and add to PATH.
     echo.
 )
 
-:: 检查 .env 文件
+:: Create .env from template when missing
 if not exist ".env" (
     if exist "env.example" (
-        echo [提示] 未找到 .env 配置文件，正在从 env.example 创建...
+        echo [INFO] .env not found. Creating from env.example...
         copy env.example .env >nul
-        echo         请编辑 .env 文件填入你的 API Key
+        echo        Please edit .env and set your API keys.
         echo.
     )
 )
 
-:: 检查依赖
-echo [1/2] 检查 Python 依赖...
+:: Check dependencies
+echo [1/2] Checking Python dependencies...
 pip show fastapi >nul 2>&1
 if %errorlevel% neq 0 (
-    echo       正在安装依赖，首次启动可能需要几分钟...
+    echo       Installing requirements. First run may take a few minutes...
     pip install -r requirements.txt
     if %errorlevel% neq 0 (
-        echo [错误] 依赖安装失败，请检查网络或手动执行: pip install -r requirements.txt
+        echo [ERROR] Dependency installation failed.
+        echo        Run manually: pip install -r requirements.txt
         pause
         exit /b 1
     )
 )
 
-:: 启动服务
-echo [2/2] 启动服务...
+:: Stop anything already listening on 8000
+for /f "tokens=5" %%a in ('netstat -aon 2^>nul ^| findstr ":8000" ^| findstr "LISTENING"') do (
+    echo       Port 8000 is occupied by PID %%a. Stopping it...
+    taskkill /pid %%a /f >nul 2>&1
+)
+
+:: Start service
+echo [2/2] Starting service...
 echo.
 echo ----------------------------------------
-echo   服务地址:  http://localhost:8000
-echo   API文档:   http://localhost:8000/docs
-echo   按 Ctrl+C 停止服务
+echo   Service URL:  http://localhost:8000
+echo   API Docs:     http://localhost:8000/docs
+echo   Press Ctrl+C to stop
 echo ----------------------------------------
 echo.
 

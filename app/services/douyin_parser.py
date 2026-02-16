@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 import yt_dlp
+from yt_dlp.cookies import CookieLoadError
 
 from app.config import settings
 from app.models.schemas import VideoInfo
@@ -38,30 +39,82 @@ class DouyinParser:
                 'Referer': 'https://www.douyin.com/',
             },
         }
-        # cookies 配置
+
+    @staticmethod
+    def _cookie_error_hint(exc: Exception) -> bool:
+        msg = str(exc) or ""
+        hints = (
+            "Fresh cookies",
+            "failed to load cookies",
+            "CookieLoadError",
+            "Failed to decrypt",
+            "DPAPI",
+            "Chrome cookie database",
+            "cookies database",
+        )
+        return any(h in msg for h in hints) or isinstance(exc, CookieLoadError)
+
+    def _iter_cookie_opts(self):
+        """
+        生成一组 cookie 加载策略（按优先级排序）。
+
+        优先使用 yt-dlp 原生 cookiesfrombrowser（通常更完整、支持多 profile 自动挑最新 DB），
+        失败时再回退到 rookiepy 导出的 cookiefile。
+        """
+        # 方式 1: 用户手动提供 cookies 文件
         if settings.ytdlp_cookies_file:
-            # 方式1: 使用用户手动导出的 cookies 文件
-            self._base_opts['cookiefile'] = settings.ytdlp_cookies_file
-        elif settings.ytdlp_cookies_from_browser:
-            # 方式2: 用 rookiepy 安全提取浏览器 cookies（解决 Chrome 锁定问题）
-            cookie_file = extract_cookies_to_file()
-            if cookie_file:
-                self._base_opts['cookiefile'] = cookie_file
+            cookie_path = Path(settings.ytdlp_cookies_file)
+            if cookie_path.exists():
+                yield {"cookiefile": str(cookie_path)}
+            else:
+                logger.warning(f"指定的 cookies 文件不存在: {cookie_path}")
+            return
+
+        # 方式 2: rookiepy 导出 cookies 到文件（支持 Chromium v20/v130+ 的 appbound 加密）
+        cookie_file = extract_cookies_to_file()
+        if cookie_file:
+            yield {"cookiefile": cookie_file}
+
+        # 方式 3: yt-dlp 原生从浏览器读取 cookies（部分 Chromium 新版本加密可能不支持，作为降级尝试）
+        if settings.ytdlp_cookies_from_browser:
+            candidates = [
+                settings.ytdlp_cookies_from_browser,
+                "edge",
+                "chrome",
+                "firefox",
+            ]
+            seen = set()
+            for b in candidates:
+                b = (b or "").strip().lower()
+                if not b or b in seen:
+                    continue
+                seen.add(b)
+                yield {"cookiesfrombrowser": (b,)}
 
     async def extract_info(self, url: str) -> VideoInfo:
         """
         提取视频信息（不下载）
         """
         try:
-            opts = {
-                **self._base_opts,
-                'skip_download': True,
-            }
-
             def _extract():
-                with yt_dlp.YoutubeDL(opts) as ydl:
-                    info = ydl.extract_info(url, download=False)
-                    return info
+                last_exc = None
+                for cookie_opts in self._iter_cookie_opts():
+                    opts = {
+                        **self._base_opts,
+                        **cookie_opts,
+                        'skip_download': True,
+                    }
+                    try:
+                        with yt_dlp.YoutubeDL(opts) as ydl:
+                            return ydl.extract_info(url, download=False)
+                    except Exception as e:
+                        last_exc = e
+                        if self._cookie_error_hint(e):
+                            continue
+                        break
+                if last_exc:
+                    raise last_exc
+                raise RuntimeError("yt-dlp 提取失败：未知错误")
 
             loop = asyncio.get_event_loop()
             info = await loop.run_in_executor(None, _extract)
@@ -98,17 +151,29 @@ class DouyinParser:
         safe_name = sanitize_filename(video_info.title) or video_info.video_id
         output_path = output_dir / f"{safe_name}.mp4"
 
-        opts = {
-            **self._base_opts,
-            'outtmpl': str(output_path),
-            'format': 'best[ext=mp4]/best',
-            'merge_output_format': 'mp4',
-            'socket_timeout': settings.download_timeout,
-        }
-
         def _download():
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                ydl.download([url])
+            last_exc = None
+            for cookie_opts in self._iter_cookie_opts():
+                opts = {
+                    **self._base_opts,
+                    **cookie_opts,
+                    'outtmpl': str(output_path),
+                    'format': 'best[ext=mp4]/best',
+                    'merge_output_format': 'mp4',
+                    'socket_timeout': settings.download_timeout,
+                }
+                try:
+                    with yt_dlp.YoutubeDL(opts) as ydl:
+                        ydl.download([url])
+                    return
+                except Exception as e:
+                    last_exc = e
+                    if self._cookie_error_hint(e):
+                        continue
+                    break
+            if last_exc:
+                raise last_exc
+            raise RuntimeError("视频下载失败：未知错误")
 
         logger.info(f"开始下载视频: {video_info.title}")
         loop = asyncio.get_event_loop()
