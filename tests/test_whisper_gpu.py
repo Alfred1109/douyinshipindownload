@@ -30,7 +30,7 @@ try:
     model = WhisperModel(
         "medium", 
         device="cuda" if torch.cuda.is_available() else "cpu",
-        compute_type="float16" if torch.cuda.is_available() else "int8"
+        compute_type="float32"  # GTX 1060 使用 float32（兼容性最好）
     )
     print("✅ 模型加载完成\n")
     

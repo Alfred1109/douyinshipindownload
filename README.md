@@ -18,16 +18,12 @@
 ### 1. 安装依赖
 
 ```bash
-# 创建虚拟环境
-python -m venv venv
-source venv/bin/activate  # Linux/macOS
-# venv\Scripts\activate     # Windows
-
 # 安装依赖
 pip install -r requirements.txt
 
 # 安装 Playwright 浏览器
-playwright install chromium
+python scripts/install_playwright.bat  # Windows
+playwright install chromium            # 或直接运行
 ```
 
 ### 2. 配置环境
@@ -43,8 +39,8 @@ cp env.example .env
 
 ```bash
 # 方式 1: 使用启动脚本（推荐）
-start_with_check.bat  # Windows
-./start.sh            # Linux/macOS
+scripts\start_with_check.bat  # Windows
+./scripts/start.sh            # Linux/macOS
 
 # 方式 2: 直接启动
 python -m uvicorn app.main:app --reload
@@ -141,10 +137,17 @@ MAX_CONCURRENT_TASKS=3            # 最大并发数
 ### 测试
 
 ```bash
-python test_playwright.py
+# 测试 Playwright 浏览器自动化
+python tests/test_playwright.py
+
+# 测试 Whisper GPU 加速
+python tests/test_whisper_gpu.py
+
+# 测试 LLM 增强
+python tests/test_llm_enhance.py
 ```
 
-详细文档: [PLAYWRIGHT_方案.md](PLAYWRIGHT_方案.md)
+详细文档: [docs/PLAYWRIGHT_方案.md](docs/PLAYWRIGHT_方案.md)
 
 ## 🍪 Cookie 管理
 
@@ -191,6 +194,15 @@ playwright install chromium
 ## 🤝 贡献
 
 欢迎提交 Issue 和 Pull Request！
+
+## 📚 文档
+
+- [架构文档](docs/ARCHITECTURE.md) - 系统架构详解
+- [技术栈说明](docs/TECH_STACK.md) - 完整技术栈
+- [快速参考](docs/QUICK_REFERENCE.md) - 命令速查
+- [系统总览](docs/SYSTEM_OVERVIEW.md) - 可视化架构
+- [优化说明](docs/OPTIMIZATION_NOTES.md) - 性能优化分析
+- [Playwright 方案](docs/PLAYWRIGHT_方案.md) - 浏览器自动化详解
 
 ## 📄 许可证
 

@@ -116,24 +116,17 @@ class LLMEnhancer:
         logger.info(f"开始 LLM 文案增强 (模型: {settings.llm_model})，原文 {len(raw_text)} 字")
 
         try:
-            tools = [
-                {
-                    "type": "web_search",
-                    "max_keyword": 2,
-                }
-            ]
-
             response = await asyncio.to_thread(
-                client.responses.create,
+                client.chat.completions.create,
                 model=settings.llm_model,
-                input=[
+                messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt},
                 ],
-                tools=tools,
+                temperature=settings.llm_temperature,
             )
 
-            enhanced_text = self._extract_text(response)
+            enhanced_text = response.choices[0].message.content.strip()
             if not enhanced_text:
                 enhanced_text = raw_text
             logger.info(f"LLM 增强完成，结果 {len(enhanced_text)} 字")
