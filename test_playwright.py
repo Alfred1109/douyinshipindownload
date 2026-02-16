@@ -12,11 +12,8 @@ async def test():
     print("测试 Playwright 浏览器自动化")
     print("="*60)
     
-    # 测试 URL
-    test_url = input("\n请输入抖音视频链接（或按回车使用默认）: ").strip()
-    if not test_url:
-        test_url = "https://www.douyin.com/video/7605511073625656611"
-    
+    # 测试 URL（使用默认值，避免交互）
+    test_url = "https://www.douyin.com/video/7605511073625656611"
     print(f"\n测试 URL: {test_url}")
     
     try:

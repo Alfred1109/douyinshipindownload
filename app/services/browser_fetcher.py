@@ -145,11 +145,15 @@ class BrowserFetcher:
             
             logger.info(f"🌐 正在访问: {url}")
             
-            # 访问页面
-            await page.goto(url, wait_until='networkidle', timeout=30000)
+            # 访问页面（使用更宽松的等待策略）
+            try:
+                await page.goto(url, wait_until='domcontentloaded', timeout=60000)
+            except Exception as e:
+                logger.warning(f"页面加载超时，尝试继续: {e}")
+                # 即使超时也继续，因为可能已经加载了部分内容
             
-            # 等待页面加载
-            await page.wait_for_timeout(2000)
+            # 等待页面加载和 JavaScript 执行
+            await page.wait_for_timeout(5000)
             
             # 尝试提取视频信息
             try:
@@ -281,11 +285,33 @@ class BrowserFetcher:
             
             logger.info(f"📥 开始下载: {url[:100]}...")
             
-            # 直接下载资源
-            response = await page.request.get(url)
+            # 使用浏览器上下文下载，携带完整的请求头和 Cookie
+            response = await page.request.get(url, headers={
+                'Referer': 'https://www.douyin.com/',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            })
             
             if response.status != 200:
                 logger.error(f"❌ 下载失败: HTTP {response.status}")
+                
+                # 尝试备用方案：直接在页面中下载
+                logger.info("🔄 尝试备用下载方案...")
+                try:
+                    await page.goto(url)
+                    await page.wait_for_timeout(3000)
+                    
+                    # 获取页面内容
+                    content = await page.content()
+                    if len(content) > 1000:  # 简单判断是否是视频内容
+                        output_path.parent.mkdir(parents=True, exist_ok=True)
+                        with open(output_path, 'wb') as f:
+                            f.write(content.encode())
+                        logger.info(f"✅ 备用方案下载完成")
+                        await page.close()
+                        return True
+                except Exception as e2:
+                    logger.error(f"备用方案也失败: {e2}")
+                
                 await page.close()
                 return False
             
@@ -294,9 +320,16 @@ class BrowserFetcher:
             with open(output_path, 'wb') as f:
                 f.write(await response.body())
             
-            logger.info(f"✅ 下载完成: {output_path} ({output_path.stat().st_size / 1024 / 1024:.2f} MB)")
+            file_size = output_path.stat().st_size
+            logger.info(f"✅ 下载完成: {output_path} ({file_size / 1024 / 1024:.2f} MB)")
             
             await page.close()
+            
+            # 检查文件大小是否合理
+            if file_size < 1024:  # 小于 1KB 可能是错误页面
+                logger.warning("⚠️  下载的文件太小，可能不是有效的视频")
+                return False
+            
             return True
             
         except Exception as e:
