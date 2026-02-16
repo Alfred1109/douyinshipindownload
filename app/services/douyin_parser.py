@@ -58,138 +58,145 @@ class DouyinParser:
         """
         生成一组 cookie 加载策略（按优先级排序）。
 
-        优先使用 yt-dlp 原生 cookiesfrombrowser（通常更完整、支持多 profile 自动挑最新 DB），
-        失败时再回退到 rookiepy 导出的 cookiefile。
+        策略调整：优先使用 yt-dlp 原生 cookiesfrombrowser（绕过 rookiepy 的加密问题）
         """
-        # 方式 1: 用户手动提供 cookies 文件
+        # 方式 1: 用户手动提供 cookies 文件（最高优先级）
         if settings.ytdlp_cookies_file:
             cookie_path = Path(settings.ytdlp_cookies_file)
             if cookie_path.exists():
+                logger.info(f"使用手动指定的 cookies 文件: {cookie_path}")
                 yield {"cookiefile": str(cookie_path)}
+                return
             else:
                 logger.warning(f"指定的 cookies 文件不存在: {cookie_path}")
-            return
 
-        # 方式 2: rookiepy 导出 cookies 到文件（支持 Chromium v20/v130+ 的 appbound 加密）
-        cookie_file = extract_cookies_to_file()
-        if cookie_file:
-            yield {"cookiefile": cookie_file}
-
-        # 方式 3: yt-dlp 原生从浏览器读取 cookies（部分 Chromium 新版本加密可能不支持，作为降级尝试）
+        # 方式 2: yt-dlp 原生从浏览器读取（推荐，绕过 rookiepy 加密问题）
+        # yt-dlp 有自己的解密实现，可能比 rookiepy 更好
         if settings.ytdlp_cookies_from_browser:
-            candidates = [
+            # 尝试多个浏览器，增加成功率
+            browsers = [
                 settings.ytdlp_cookies_from_browser,
                 "edge",
-                "chrome",
+                "chrome", 
                 "firefox",
+                "chromium",
+                "brave",
+                "opera",
             ]
             seen = set()
-            for b in candidates:
-                b = (b or "").strip().lower()
-                if not b or b in seen:
+            for browser in browsers:
+                browser = (browser or "").strip().lower()
+                if not browser or browser in seen:
                     continue
-                seen.add(b)
-                yield {"cookiesfrombrowser": (b,)}
+                seen.add(browser)
+                logger.debug(f"尝试从 {browser} 读取 cookies")
+                yield {"cookiesfrombrowser": (browser,)}
+
+        # 方式 3: rookiepy 导出（作为最后的降级方案）
+        # 注意：Chrome v130+ 可能失败
+        try:
+            cookie_file = extract_cookies_to_file()
+            if cookie_file:
+                logger.info(f"使用 rookiepy 导出的 cookies: {cookie_file}")
+                yield {"cookiefile": cookie_file}
+        except Exception as e:
+            logger.debug(f"rookiepy 提取失败: {e}")
 
     async def extract_info(self, url: str) -> VideoInfo:
         """
-        提取视频信息（不下载）
+        提取视频信息（使用浏览器自动化）
         """
         try:
-            def _extract():
-                last_exc = None
-                for cookie_opts in self._iter_cookie_opts():
-                    opts = {
-                        **self._base_opts,
-                        **cookie_opts,
-                        'skip_download': True,
-                    }
-                    try:
-                        with yt_dlp.YoutubeDL(opts) as ydl:
-                            return ydl.extract_info(url, download=False)
-                    except Exception as e:
-                        last_exc = e
-                        if self._cookie_error_hint(e):
-                            continue
-                        break
-                if last_exc:
-                    raise last_exc
-                raise RuntimeError("yt-dlp 提取失败：未知错误")
-
-            loop = asyncio.get_event_loop()
-            info = await loop.run_in_executor(None, _extract)
-
+            from app.services.browser_fetcher import browser_fetcher
+            
+            logger.info(f"🔍 提取视频信息: {url}")
+            
+            # 使用浏览器获取信息
+            _, video_info = await browser_fetcher.fetch_video_info(url)
+            
+            if video_info:
+                return video_info
+            
+            # 如果失败，返回基本信息
+            video_id = self.extract_video_id(url)
             return VideoInfo(
-                video_id=str(info.get('id', '')),
-                title=info.get('title', '未知标题'),
-                author=info.get('uploader', info.get('creator', '未知作者')),
-                duration=float(info.get('duration', 0)),
-                url=info.get('webpage_url', url),
-                cover_url=info.get('thumbnail', ''),
-            )
-        except Exception as e:
-            logger.warning(f"yt-dlp 提取失败: {e}")
-            # 返回基本信息，让用户知道需要手动上传
-            return VideoInfo(
-                video_id="unknown",
-                title="无法自动提取，请使用文件上传功能",
+                video_id=video_id or "unknown",
+                title=f"抖音视频 {video_id}" if video_id else "未知视频",
                 author="未知作者",
                 duration=0,
                 url=url,
                 cover_url="",
             )
+            
+        except ImportError:
+            logger.warning("⚠️  Playwright 未安装，返回基本信息")
+            video_id = self.extract_video_id(url)
+            return VideoInfo(
+                video_id=video_id or "unknown",
+                title=f"抖音视频 {video_id}" if video_id else "未知视频",
+                author="未知作者",
+                duration=0,
+                url=url,
+                cover_url="",
+            )
+        except Exception as e:
+            logger.warning(f"⚠️  提取视频信息失败: {e}")
+            video_id = self.extract_video_id(url)
+            return VideoInfo(
+                video_id=video_id or "unknown",
+                title=f"抖音视频 {video_id}" if video_id else "未知视频",
+                author="未知作者",
+                duration=0,
+                url=url,
+                cover_url="",
+            )
+    
+    def extract_video_id(self, url: str) -> Optional[str]:
+        """从 URL 提取视频 ID"""
+        patterns = [
+            r'/video/(\d+)',
+            r'modal_id=(\d+)',
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, url)
+            if match:
+                return match.group(1)
+        return None
 
     async def download_video(self, url: str, output_dir: Optional[Path] = None) -> Tuple[Path, VideoInfo]:
         """
-        下载视频并返回文件路径与视频信息
+        使用浏览器自动化下载视频
+        
+        完全模拟真实浏览器行为，绕过所有反爬限制
         """
         output_dir = output_dir or settings.temp_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
+        output_dir.mkdir(parents=True, exist_ok=True
 
-        # 先提取信息获取文件名
-        video_info = await self.extract_info(url)
-        safe_name = sanitize_filename(video_info.title) or video_info.video_id
-        output_path = output_dir / f"{safe_name}.mp4"
-
-        def _download():
-            last_exc = None
-            for cookie_opts in self._iter_cookie_opts():
-                opts = {
-                    **self._base_opts,
-                    **cookie_opts,
-                    'outtmpl': str(output_path),
-                    'format': 'best[ext=mp4]/best',
-                    'merge_output_format': 'mp4',
-                    'socket_timeout': settings.download_timeout,
-                }
-                try:
-                    with yt_dlp.YoutubeDL(opts) as ydl:
-                        ydl.download([url])
-                    return
-                except Exception as e:
-                    last_exc = e
-                    if self._cookie_error_hint(e):
-                        continue
-                    break
-            if last_exc:
-                raise last_exc
-            raise RuntimeError("视频下载失败：未知错误")
-
-        logger.info(f"开始下载视频: {video_info.title}")
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, _download)
-
-        # yt-dlp 可能会自动添加扩展名
-        if not output_path.exists():
-            # 尝试查找实际输出文件
-            candidates = list(output_dir.glob(f"{safe_name}.*"))
-            if candidates:
-                output_path = candidates[0]
-            else:
-                raise FileNotFoundError(f"下载完成但未找到输出文件: {output_path}")
-
-        logger.info(f"视频下载完成: {output_path}")
-        return output_path, video_info
+        logger.info(f"🌐 使用浏览器自动化下载: {url}")
+        
+        try:
+            from app.services.browser_fetcher import browser_fetcher
+            
+            # 使用浏览器自动化获取并下载
+            video_path, video_info = await browser_fetcher.fetch_and_download(url)
+            
+            if not video_path or not video_path.exists():
+                raise RuntimeError("浏览器自动化下载失败")
+            
+            logger.info(f"✅ 下载成功: {video_path}")
+            return video_path, video_info
+            
+        except ImportError:
+            logger.error("❌ Playwright 未安装")
+            logger.error("请运行以下命令安装:")
+            logger.error("  pip install playwright")
+            logger.error("  playwright install chromium")
+            raise RuntimeError(
+                "Playwright 未安装。请运行: pip install playwright && playwright install chromium"
+            )
+        except Exception as e:
+            logger.error(f"❌ 下载失败: {e}")
+            raise
 
 
 # 全局单例

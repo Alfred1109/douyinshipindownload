@@ -49,6 +49,10 @@ app.add_middleware(
 app.include_router(router)
 app.include_router(upload_router, prefix="/api", tags=["文件上传"])
 
+# 注册 Cookie 管理路由
+from app.api.cookie_routes import router as cookie_router
+app.include_router(cookie_router)
+
 # ─── 静态文件 ───
 web_dir = BASE_DIR / "web"
 if web_dir.exists():

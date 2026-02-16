@@ -8,6 +8,9 @@ pydantic-settings>=2.1.0
 yt-dlp>=2024.1.0
 rookiepy>=0.5.6
 
+# ─── 浏览器自动化 ───
+playwright>=1.40.0
+
 # ─── 语音识别 (本地模式) ───
 faster-whisper>=1.0.0
 torch>=2.0.0

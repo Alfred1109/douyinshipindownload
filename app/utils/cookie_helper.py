@@ -49,6 +49,18 @@ def _try_extract(browser_name: str, func) -> list:
             return cookies
 
         logger.debug(f"{browser_name} 中无抖音 cookies")
+    except RuntimeError as e:
+        error_msg = str(e)
+        if "appbound encryption" in error_msg or "running as admin" in error_msg:
+            logger.warning(
+                f"⚠️  {browser_name} 需要管理员权限（Chrome v130+ 加密限制）\n"
+                f"   解决方案:\n"
+                f"   1. 以管理员身份运行程序\n"
+                f"   2. 或使用浏览器扩展手动导出 cookies.txt\n"
+                f"   3. 或使用文件上传功能绕过下载"
+            )
+        else:
+            logger.debug(f"{browser_name} 提取失败: {e}")
     except Exception as e:
         logger.debug(f"{browser_name} 提取失败: {e}")
     return []
@@ -198,8 +210,21 @@ def extract_cookies_to_file() -> str:
 
     logger.error(
         "❌ 所有浏览器均无法提取抖音 cookies！\n"
-        "   解决方案：\n"
-        "   1. 用 Edge 浏览器打开 https://www.douyin.com 并登录\n"
-        "   2. 或用浏览器扩展导出 cookies.txt 文件，放到项目目录并在 .env 中设置 YTDLP_COOKIES_FILE=cookies.txt"
+        "   可能原因：\n"
+        "   1. 浏览器未访问过抖音或未登录\n"
+        "   2. Chrome/Edge v130+ 需要管理员权限（appbound encryption）\n"
+        "   \n"
+        "   解决方案（3选1）：\n"
+        "   【方案1 - 最简单】使用文件上传功能\n"
+        "      访问 http://localhost:8000 上传本地视频文件\n"
+        "   \n"
+        "   【方案2 - 管理员权限】\n"
+        "      以管理员身份运行: python fix_chrome_cookies.py\n"
+        "   \n"
+        "   【方案3 - 手动导出】\n"
+        "      1. 安装浏览器扩展 'Get cookies.txt LOCALLY'\n"
+        "      2. 访问 https://www.douyin.com 并登录\n"
+        "      3. 导出 cookies.txt 到项目根目录\n"
+        "      4. 在 .env 中设置: YTDLP_COOKIES_FILE=cookies.txt"
     )
     return ""

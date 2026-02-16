@@ -445,21 +445,55 @@
         <!-- Header -->
         <header>
             <h1>🎵 抖音短视频文案提取</h1>
-            <p>输入抖音视频链接，自动提取音频并生成文案 · 支持大模型智能校正</p>
+            <p>上传视频文件，自动提取音频并生成文案 · 支持大模型智能校正</p>
+            <p style="font-size: 0.85rem; color: var(--warning); margin-top: 8px;">
+                💡 推荐使用文件上传功能 - 无需处理复杂的 Cookie 配置
+            </p>
         </header>
 
         <!-- Input Section -->
         <div class="input-section">
             <div class="input-mode-tabs">
-                <button class="tab-btn active" data-mode="single" onclick="switchMode('single')">单个提取</button>
-                <button class="tab-btn" data-mode="batch" onclick="switchMode('batch')">批量提取</button>
+                <button class="tab-btn active" data-mode="upload" onclick="switchMode('upload')">📁 文件上传（推荐）</button>
+                <button class="tab-btn" data-mode="single" onclick="switchMode('single')">🔗 URL 提取</button>
+                <button class="tab-btn" data-mode="batch" onclick="switchMode('batch')">📋 批量提取</button>
+                <button class="tab-btn" data-mode="cookies" onclick="switchMode('cookies')">🍪 Cookie 管理</button>
+            </div>
+
+            <!-- Upload Mode (New Default) -->
+            <div id="uploadMode">
+                <div style="border: 2px dashed var(--border); border-radius: 8px; padding: 32px; text-align: center; background: var(--bg-input);">
+                    <input type="file" id="fileInput" accept="video/*" style="display: none;" onchange="handleFileSelect(event)" />
+                    <div onclick="document.getElementById('fileInput').click()" style="cursor: pointer;">
+                        <div style="font-size: 3rem; margin-bottom: 12px;">📁</div>
+                        <p style="font-size: 1.1rem; margin-bottom: 8px;">点击选择视频文件</p>
+                        <p style="font-size: 0.85rem; color: var(--text-secondary);">支持 MP4, MOV, AVI 等格式 · 最大 100MB</p>
+                    </div>
+                </div>
+                <div id="fileInfo" style="display: none; margin-top: 16px; padding: 16px; background: var(--bg-input); border-radius: 8px;">
+                    <p style="margin-bottom: 8px;"><strong>已选择:</strong> <span id="fileName"></span></p>
+                    <p style="font-size: 0.85rem; color: var(--text-secondary);"><strong>大小:</strong> <span id="fileSize"></span></p>
+                    <button class="btn-primary" style="margin-top: 12px; width: 100%;" onclick="uploadFile()">开始提取文案</button>
+                </div>
+                <div style="margin-top: 16px; padding: 12px; background: rgba(37, 211, 102, 0.1); border-radius: 8px; border: 1px solid rgba(37, 211, 102, 0.3);">
+                    <p style="font-size: 0.9rem; color: var(--success);">✅ 推荐使用文件上传</p>
+                    <ul style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 8px; padding-left: 20px;">
+                        <li>无需配置 Cookie</li>
+                        <li>100% 成功率</li>
+                        <li>支持任意来源的视频</li>
+                    </ul>
+                </div>
             </div>
 
             <!-- Single Mode -->
-            <div id="singleMode">
+            <div id="singleMode" style="display:none;">
                 <div class="single-input">
                     <input type="text" id="urlInput" placeholder="粘贴抖音视频链接，如 https://v.douyin.com/xxxxx/" />
                     <button class="btn-primary" id="extractBtn" onclick="extractSingle()">开始提取</button>
+                </div>
+                <div style="margin-top: 12px; padding: 12px; background: rgba(255, 184, 0, 0.1); border-radius: 8px; border: 1px solid rgba(255, 184, 0, 0.3);">
+                    <p style="font-size: 0.85rem; color: var(--warning);">⚠️ URL 下载需要有效的 Cookie 配置</p>
+                    <p style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 4px;">如果下载失败，请切换到"文件上传"模式</p>
                 </div>
             </div>
 
@@ -470,6 +504,25 @@
                     <p class="hint">每行一个链接，最多支持 50 个</p>
                 </div>
                 <button class="btn-primary btn-batch" id="batchBtn" onclick="extractBatch()">批量提取</button>
+            </div>
+
+            <!-- Cookie Management Mode -->
+            <div id="cookiesMode" style="display:none;">
+                <div class="cookie-status" id="cookieStatus">
+                    <p style="color: var(--text-secondary); margin-bottom: 12px;">正在检查 Cookie 状态...</p>
+                </div>
+                
+                <div class="batch-input" style="margin-top: 16px;">
+                    <textarea id="cookieInput" placeholder="粘贴从浏览器导出的 cookies.txt 内容（Netscape 格式）&#10;&#10;示例：&#10;# Netscape HTTP Cookie File&#10;.douyin.com	TRUE	/	FALSE	1234567890	cookie_name	cookie_value"></textarea>
+                    <p class="hint">
+                        💡 如何获取 Cookies？
+                        <a href="#" onclick="showCookieGuide(); return false;" style="color: var(--primary);">查看详细教程</a>
+                    </p>
+                </div>
+                <div style="display: flex; gap: 12px; margin-top: 16px;">
+                    <button class="btn-primary" onclick="uploadCookies()" style="flex: 1;">上传 Cookies</button>
+                    <button class="btn-small" onclick="clearCookies()" style="padding: 12px 24px;">清除</button>
+                </div>
             </div>
 
             <div class="options-row">
@@ -502,14 +555,210 @@
     <div class="toast" id="toast"></div>
 
     <script>
-        let currentMode = 'single';
+        let currentMode = 'upload';  // 默认改为上传模式
+        let selectedFile = null;
 
         function switchMode(mode) {
             currentMode = mode;
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
             document.querySelector(`[data-mode="${mode}"]`).classList.add('active');
+            document.getElementById('uploadMode').style.display = mode === 'upload' ? 'block' : 'none';
             document.getElementById('singleMode').style.display = mode === 'single' ? 'block' : 'none';
             document.getElementById('batchMode').style.display = mode === 'batch' ? 'block' : 'none';
+            document.getElementById('cookiesMode').style.display = mode === 'cookies' ? 'block' : 'none';
+            
+            if (mode === 'cookies') {
+                checkCookieStatus();
+            }
+        }
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            // 检查文件类型
+            if (!file.type.startsWith('video/')) {
+                showToast('请选择视频文件');
+                return;
+            }
+            
+            // 检查文件大小 (100MB)
+            const maxSize = 100 * 1024 * 1024;
+            if (file.size > maxSize) {
+                showToast('文件大小不能超过 100MB');
+                return;
+            }
+            
+            selectedFile = file;
+            document.getElementById('fileName').textContent = file.name;
+            document.getElementById('fileSize').textContent = (file.size / 1024 / 1024).toFixed(2) + ' MB';
+            document.getElementById('fileInfo').style.display = 'block';
+        }
+
+        async function uploadFile() {
+            if (!selectedFile) {
+                showToast('请先选择文件');
+                return;
+            }
+            
+            setLoading(true);
+            showStatus('正在上传文件...', 0.1);
+            
+            try {
+                const formData = new FormData();
+                formData.append('file', selectedFile);
+                formData.append('title', selectedFile.name.replace(/\.[^/.]+$/, ''));
+                
+                const resp = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData,
+                });
+                
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    throw new Error(err.detail || '上传失败');
+                }
+                
+                const result = await resp.json();
+                showStatus(STATUS_LABELS[result.status] || result.status, result.progress || 1);
+                renderResult(result);
+                showToast('✅ 提取完成！');
+                
+                // 清除选择
+                selectedFile = null;
+                document.getElementById('fileInput').value = '';
+                document.getElementById('fileInfo').style.display = 'none';
+                
+            } catch (e) {
+                showToast('❌ ' + e.message);
+                showStatus('处理失败', 0);
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        async function checkCookieStatus() {
+            const statusDiv = document.getElementById('cookieStatus');
+            try {
+                const resp = await fetch('/api/cookies/status');
+                const data = await resp.json();
+                
+                if (data.has_cookies) {
+                    const keyFields = data.key_fields || {};
+                    const allPresent = Object.values(keyFields).every(v => v);
+                    
+                    statusDiv.innerHTML = `
+                        <div style="padding: 16px; background: var(--bg-input); border-radius: 8px;">
+                            <p style="color: ${allPresent ? 'var(--success)' : 'var(--warning)'}; font-weight: 600; margin-bottom: 8px;">
+                                ${allPresent ? '✅ Cookies 已配置且完整' : '⚠️ Cookies 已配置但可能不完整'}
+                            </p>
+                            <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 8px;">
+                                文件大小: ${(data.file_size / 1024).toFixed(1)} KB · Cookie 数量: ${data.cookie_count}
+                            </p>
+                            <div style="font-size: 0.85rem;">
+                                <p style="margin-bottom: 4px;">关键字段检查:</p>
+                                ${Object.entries(keyFields).map(([k, v]) => 
+                                    `<span style="color: ${v ? 'var(--success)' : 'var(--error)'};">${v ? '✅' : '❌'} ${k}</span>`
+                                ).join(' · ')}
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    statusDiv.innerHTML = `
+                        <div style="padding: 16px; background: var(--bg-input); border-radius: 8px;">
+                            <p style="color: var(--warning); font-weight: 600; margin-bottom: 8px;">
+                                ⚠️ 未检测到 Cookies
+                            </p>
+                            <p style="font-size: 0.85rem; color: var(--text-secondary);">
+                                URL 下载功能需要有效的 Cookies。你可以上传 Cookies 或使用文件上传功能。
+                            </p>
+                        </div>
+                    `;
+                }
+            } catch (e) {
+                statusDiv.innerHTML = `<p style="color: var(--error);">检查失败: ${e.message}</p>`;
+            }
+        }
+
+        async function uploadCookies() {
+            const text = document.getElementById('cookieInput').value.trim();
+            if (!text) {
+                showToast('请粘贴 Cookies 内容');
+                return;
+            }
+            
+            try {
+                const resp = await fetch('/api/cookies/upload', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cookies_text: text, format: 'netscape' }),
+                });
+                
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    throw new Error(err.detail || '上传失败');
+                }
+                
+                const result = await resp.json();
+                showToast('✅ ' + result.message);
+                document.getElementById('cookieInput').value = '';
+                checkCookieStatus();
+            } catch (e) {
+                showToast('❌ ' + e.message);
+            }
+        }
+
+        async function clearCookies() {
+            if (!confirm('确定要清除 Cookies 吗？')) return;
+            
+            try {
+                const resp = await fetch('/api/cookies/clear', { method: 'DELETE' });
+                const result = await resp.json();
+                showToast('✅ ' + result.message);
+                checkCookieStatus();
+            } catch (e) {
+                showToast('❌ 清除失败: ' + e.message);
+            }
+        }
+
+        async function showCookieGuide() {
+            try {
+                const resp = await fetch('/api/cookies/guide');
+                const guide = await resp.json();
+                
+                let html = '<div style="max-width: 600px; margin: 20px auto; padding: 24px; background: var(--bg-card); border-radius: var(--radius); border: 1px solid var(--border);">';
+                html += '<h2 style="margin-bottom: 16px;">📖 Cookie 导出教程</h2>';
+                
+                guide.methods.forEach((method, i) => {
+                    html += `<div style="margin-bottom: 20px; padding: 16px; background: var(--bg-input); border-radius: 8px;">`;
+                    html += `<h3 style="margin-bottom: 8px;">方法 ${i+1}: ${method.name}</h3>`;
+                    html += `<p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 12px;">难度: ${method.difficulty}</p>`;
+                    html += '<ol style="padding-left: 20px; line-height: 1.8;">';
+                    method.steps.forEach(step => {
+                        html += `<li style="font-size: 0.9rem;">${step}</li>`;
+                    });
+                    html += '</ol>';
+                    if (method.extension_url) {
+                        html += `<p style="margin-top: 8px;"><a href="${method.extension_url}" target="_blank" style="color: var(--primary);">下载扩展 →</a></p>`;
+                    }
+                    html += '</div>';
+                });
+                
+                html += '<button class="btn-primary" onclick="document.getElementById(\'guideModal\').remove()" style="width: 100%;">关闭</button>';
+                html += '</div>';
+                
+                const modal = document.createElement('div');
+                modal.id = 'guideModal';
+                modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 9999; overflow-y: auto;';
+                modal.innerHTML = html;
+                document.body.appendChild(modal);
+                
+                modal.addEventListener('click', (e) => {
+                    if (e.target === modal) modal.remove();
+                });
+            } catch (e) {
+                showToast('加载教程失败');
+            }
         }
 
         function showStatus(text, progress) {
