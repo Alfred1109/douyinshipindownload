@@ -58,9 +58,6 @@ class BrowserFetcher:
                 locale='zh-CN',
             )
             
-            # 加载 Cookie
-            await self._load_cookies()
-            
             logger.info("✅ 浏览器启动成功")
             
         except ImportError:
@@ -69,46 +66,6 @@ class BrowserFetcher:
         except Exception as e:
             logger.error(f"❌ 浏览器启动失败: {e}")
             raise
-    
-    async def _load_cookies(self):
-        """加载 Cookie 到浏览器"""
-        cookie_file = settings.temp_dir / "cookies.txt"
-        if not cookie_file.exists():
-            logger.warning("⚠️  未找到 Cookie 文件，将以游客身份访问")
-            return
-        
-        try:
-            content = cookie_file.read_text(encoding='utf-8')
-            cookies = []
-            
-            for line in content.split('\n'):
-                if line.strip() and not line.startswith('#'):
-                    parts = line.strip().split('\t')
-                    if len(parts) >= 7:
-                        domain = parts[0]
-                        path = parts[2]
-                        secure = parts[3] == 'TRUE'
-                        expires = int(parts[4]) if parts[4].isdigit() else -1
-                        name = parts[5]
-                        value = parts[6]
-                        
-                        cookies.append({
-                            'name': name,
-                            'value': value,
-                            'domain': domain,
-                            'path': path,
-                            'expires': expires if expires > 0 else -1,
-                            'httpOnly': False,
-                            'secure': secure,
-                            'sameSite': 'Lax',
-                        })
-            
-            if cookies:
-                await self.context.add_cookies(cookies)
-                logger.info(f"✅ 已加载 {len(cookies)} 个 Cookie")
-            
-        except Exception as e:
-            logger.warning(f"⚠️  加载 Cookie 失败: {e}")
     
     async def fetch_video_info(self, url: str) -> Tuple[Optional[str], Optional[VideoInfo]]:
         """
