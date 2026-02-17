@@ -49,6 +49,7 @@ class TranscriptResult(BaseModel):
 class TaskRequest(BaseModel):
     """单个任务请求"""
     url: str = Field(description="抖音视频链接")
+    use_llm: bool = Field(default=True, description="是否使用大模型增强")
 
 
 class BatchTaskRequest(BaseModel):

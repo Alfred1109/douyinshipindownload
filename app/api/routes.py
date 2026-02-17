@@ -24,12 +24,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["视频文案提取"])
 
 
-@router.post("/extract", response_model=TaskResponse, summary="提取单个视频文案")
+@router.post("/extract", summary="提交视频提取任务")
 async def extract_single(request: TaskRequest):
     """
-    提取单个抖音视频的音频文案
-
-    流程: 解析链接 → 下载视频 → 提取音频 → 语音识别 → LLM增强
+    提交单个抖音视频的提取任务（异步）
+    
+    返回任务ID，前端可以通过 /api/task/{task_id} 查询进度
     """
     url = request.url.strip()
 
@@ -40,11 +40,21 @@ async def extract_single(request: TaskRequest):
         )
 
     try:
-        result = await process_single(url, use_llm=True)
-        return result
+        # 创建异步任务
+        import asyncio
+        from app.services.pipeline import _task_store, create_task
+        
+        task_id, task = create_task(url)
+        
+        # 在后台启动处理任务
+        asyncio.create_task(process_single(task_id, url, use_llm=request.use_llm))
+        
+        # 立即返回任务ID
+        return task
+        
     except Exception as e:
-        logger.error(f"提取失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"处理失败: {str(e)}")
+        logger.error(f"创建任务失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"创建任务失败: {str(e)}")
 
 
 @router.post("/extract/batch", response_model=BatchTaskResponse, summary="批量提取视频文案")

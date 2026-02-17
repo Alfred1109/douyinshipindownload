@@ -62,3 +62,7 @@ cookies.txt
 *.7z
 *.rar
 *.tar.gz
+
+# Test files
+test_*.html
+test_*.py

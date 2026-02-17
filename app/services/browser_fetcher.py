@@ -37,6 +37,21 @@ class BrowserFetcher:
             return
         
         try:
+            # Windows 平台修复：确保使用正确的事件循环
+            import sys
+            if sys.platform == 'win32':
+                # 获取当前事件循环
+                try:
+                    loop = asyncio.get_running_loop()
+                    # 如果当前循环不是 ProactorEventLoop，我们需要记录警告
+                    if not isinstance(loop, asyncio.ProactorEventLoop):
+                        logger.warning("当前事件循环不是 ProactorEventLoop，Playwright 可能无法正常工作")
+                        # 设置策略以便将来的循环使用正确的类型
+                        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+                except RuntimeError:
+                    # 没有运行中的循环，设置策略
+                    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+            
             from playwright.async_api import async_playwright
             
             self.playwright = await async_playwright().start()

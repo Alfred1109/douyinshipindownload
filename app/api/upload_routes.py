@@ -82,14 +82,14 @@ async def upload_video_file(
         
         # 转录音频
         task.status = TaskStatus.TRANSCRIBING
-        transcript = await transcriber_service.transcribe_audio(audio_path)
+        transcript = await transcriber_service.transcribe(audio_path)
         task.transcript = transcript
         
         # LLM增强（如果启用）
-        if settings.llm_enabled:
+        if settings.llm_enabled and transcript.raw_text:
             task.status = TaskStatus.ENHANCING
-            enhanced = await llm_enhancer.enhance_transcript(transcript)
-            task.enhanced_transcript = enhanced
+            enhanced_text = await llm_enhancer.enhance(transcript.raw_text)
+            transcript.enhanced_text = enhanced_text
         
         task.status = TaskStatus.COMPLETED
         

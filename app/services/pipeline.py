@@ -39,7 +39,16 @@ def get_batch(batch_id: str) -> Optional[BatchTaskResponse]:
     return _batch_store.get(batch_id)
 
 
+def create_task(url: str) -> tuple[str, TaskResponse]:
+    """创建新任务并返回任务ID和任务对象"""
+    task_id = generate_task_id()
+    task = TaskResponse(task_id=task_id, url=url, status=TaskStatus.PENDING, progress=0.0)
+    _task_store[task_id] = task
+    return task_id, task
+
+
 async def process_single(
+    task_id: str,
     url: str,
     use_llm: bool = True,
     on_progress: Optional[Callable] = None,
@@ -48,6 +57,7 @@ async def process_single(
     处理单个视频的完整流水线
 
     Args:
+        task_id: 任务ID
         url: 抖音视频链接
         use_llm: 是否使用大模型增强
         on_progress: 进度回调函数
@@ -55,9 +65,9 @@ async def process_single(
     Returns:
         TaskResponse 任务结果
     """
-    task_id = generate_task_id()
-    task = TaskResponse(task_id=task_id, url=url, status=TaskStatus.PENDING)
-    _task_store[task_id] = task
+    task = _task_store.get(task_id)
+    if not task:
+        raise ValueError(f"任务不存在: {task_id}")
 
     video_path = None
     audio_path = None
@@ -159,7 +169,9 @@ async def process_batch(
 
     async def _process_one(url: str):
         async with semaphore:
-            result = await process_single(url, use_llm=use_llm)
+            # 为批量任务中的每个子任务创建独立的task_id
+            task_id, _ = create_task(url)
+            result = await process_single(task_id, url, use_llm=use_llm)
             batch.tasks.append(result)
             if result.status == TaskStatus.COMPLETED:
                 batch.completed += 1

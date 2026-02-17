@@ -2,9 +2,14 @@
 FastAPI 应用主入口
 """
 
+import asyncio
 import logging
 import sys
 from pathlib import Path
+
+# Windows 平台修复：设置正确的事件循环策略
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

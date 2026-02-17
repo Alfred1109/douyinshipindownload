@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>抖音短视频文案提取工具</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -663,7 +666,7 @@
                 const resp = await fetch('/api/extract', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url }),
+                    body: JSON.stringify({ url, use_llm: useLLM }),
                 });
 
                 if (!resp.ok) {
@@ -671,16 +674,67 @@
                     throw new Error(err.detail || '请求失败');
                 }
 
-                const result = await resp.json();
-                showStatus(STATUS_LABELS[result.status] || result.status, result.progress || 1);
-                renderResult(result);
-                showToast('提取完成！');
+                const task = await resp.json();
+                
+                // 开始轮询任务状态
+                await pollTaskStatus(task.task_id);
+                
             } catch (e) {
                 showToast('错误: ' + e.message);
                 showStatus('处理失败', 0);
-            } finally {
                 setLoading(false);
             }
+        }
+
+        async function pollTaskStatus(taskId) {
+            const pollInterval = 500; // 每500ms查询一次
+            const maxAttempts = 240; // 最多2分钟
+            let attempts = 0;
+
+            const poll = async () => {
+                try {
+                    const resp = await fetch(`/api/task/${taskId}`);
+                    if (!resp.ok) {
+                        const errorText = await resp.text();
+                        console.error('API 错误:', resp.status, errorText);
+                        throw new Error(`查询任务状态失败: ${resp.status}`);
+                    }
+
+                    const task = await resp.json();
+                    console.log('任务状态:', task.status, '进度:', task.progress);
+                    
+                    // 更新进度显示
+                    showStatus(STATUS_LABELS[task.status] || task.status, task.progress || 0);
+
+                    // 检查任务是否完成
+                    if (task.status === 'completed') {
+                        renderResult(task);
+                        showToast('✅ 提取完成！');
+                        setLoading(false);
+                        return;
+                    } else if (task.status === 'failed') {
+                        showToast('❌ 处理失败: ' + (task.error || '未知错误'));
+                        showStatus('处理失败', 0);
+                        setLoading(false);
+                        return;
+                    }
+
+                    // 继续轮询
+                    attempts++;
+                    if (attempts < maxAttempts) {
+                        setTimeout(poll, pollInterval);
+                    } else {
+                        throw new Error('任务超时');
+                    }
+                } catch (e) {
+                    showToast('错误: ' + e.message);
+                    showStatus('查询失败', 0);
+                    setLoading(false);
+                }
+            };
+
+            // 开始轮询
+            poll();
         }
 
         async function extractBatch() {
