@@ -78,20 +78,27 @@ async def upload_video_file(
         
         # 直接从上传的文件提取音频
         task.status = TaskStatus.EXTRACTING_AUDIO
-        audio_path = await audio_extractor.extract_audio(file_path)
+        task.progress = 0.3
+        audio_path = await audio_extractor.extract(file_path)
         
         # 转录音频
         task.status = TaskStatus.TRANSCRIBING
+        task.progress = 0.5
         transcript = await transcriber_service.transcribe(audio_path)
         task.transcript = transcript
         
         # LLM增强（如果启用）
         if settings.llm_enabled and transcript.raw_text:
             task.status = TaskStatus.ENHANCING
+            task.progress = 0.8
             enhanced_text = await llm_enhancer.enhance(transcript.raw_text)
             transcript.enhanced_text = enhanced_text
         
+        # 设置完成状态
         task.status = TaskStatus.COMPLETED
+        task.progress = 1.0
+        from datetime import datetime
+        task.completed_at = datetime.now()
         
         return task
         
